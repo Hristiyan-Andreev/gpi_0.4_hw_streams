@@ -1,0 +1,4 @@
+# The script should be put in "sudo crontab -e"
+
+@reboot sudo python3 /home/pi/Projects/gpi_0.4_hw_streams/main.py
+
