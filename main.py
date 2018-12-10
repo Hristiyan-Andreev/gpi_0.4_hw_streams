@@ -21,9 +21,12 @@ class TimeMeasure():
 
 	def end_measure(self):
 		self.end_time = time.time() - self.start_time
-		print("Reaction time: " + str(self.end_time))
-
-time_measure = TimeMeasure()
+		
+	def print_measure(self, msg = "Time measured: "):
+		print(msg + str(self.end_time))
+		
+		
+reaction_time = TimeMeasure()
 
 # GPI to Stream class with more information
 class GpiStream:
@@ -32,8 +35,19 @@ class GpiStream:
 	
 	def __init__(self, id):
 		self.stream_id = id
+		
 	def __str__(self):
 		return "GPI: {} str_id: {} in_cue: {}".format(self.gpi_input, self.stream_id, self.in_cue)
+		
+	def update_info(self, stream):
+		self.in_cue = stream.in_cue
+		
+	def start_cue(self, elemental_ip = cf.elemental_ip):
+		response = liveapi.cue_command(elemental_ip, self.stream_id, 'start_cue')
+		
+	def stop_cue(self, elemental_ip = cf.elemental_ip):
+		response = liveapi.cue_command(elemental_ip, self.stream_id, 'stop_cue')
+		
 
 # Configure the web app (needed only for autorestar)
 app = Flask(__name__)
@@ -58,34 +72,43 @@ for GPI in list(cf.gpi2stream):
 # Start cue on Falling edge and Stop Cue on Rising edge
 def start_stop_avail(gpi):
 	edge = GPIO.input(gpi)
+	stream = gpi_stream_dict[gpi]			# Make a copy of the dict object, for better perfomance
 	print("1. {} Event detcted".format(edge))
-	print("2. Stream is in cue: {}".format(gpi_stream_dict[gpi].in_cue))
+	print("2. Stream is in cue: {}".format(stream.in_cue))
 	
 	# Rising edge detected and Stream is in Cue => Stop cue
-	if edge and gpi_stream_dict[gpi].in_cue:	
+	if edge and stream.in_cue:	
 		print("3. Stopping cue")
-		time_measure.start_measure()
-		resp = liveapi.cue_command(cf.elemental_ip, cf.gpi2stream[gpi], 'stop_cue') # Stop cue
-		time_measure.end_measure()
-		#print(resp)
-		gpi_stream_dict[gpi].in_cue = False 		# Stream is no longer in cue
+		reaction_time.start_measure()
+		#resp = liveapi.cue_command(cf.elemental_ip, cf.gpi2stream[gpi], 'stop_cue') # Stop cue
+		stream.stop_cue()
+		
+		reaction_time.end_measure()
+		reaction_time.print_measure()
+		
+		stream.in_cue = False 		# Stream is no longer in cue
+		gpi_stream_dict[gpi].update_info(stream)	# Update the actual object in the stream dict		
 		time.sleep(cf.wait_time)					# Sleeps the thread for all GPIO inputs - not good
 		
 	# Falling edge detected and Stream is NOT in Cue => Start cue
-	elif not edge and not gpi_stream_dict[gpi].in_cue:	
+	elif not edge and not stream.in_cue:	
 		print("3. Starting cue")
-		time_measure.start_measure()
-		resp = liveapi.cue_command(cf.elemental_ip, cf.gpi2stream[gpi], 'start_cue') # Start cue			
-		time_measure.end_measure()
-		#print(resp)
+		reaction_time.start_measure()
+		#resp = liveapi.cue_command(cf.elemental_ip, cf.gpi2stream[gpi], 'start_cue') # Start cue
+		stream.start_cue()
+		
+		reaction_time.end_measure()
+		reaction_time.print_measure()
+		
 		gpi_stream_dict[gpi].in_cue = True			# Stream is now in cue
+		gpi_stream_dict[gpi].update_info(stream)	# Update the actual object in the stream dict
 		time.sleep(cf.wait_time)					# Sleeps the thread for all GPIO inputs - not good
 		
 
 # Tie callbacks to events
 for GPI in list(cf.gpi2stream):
 	#GPIO.add_event_detect( GPI, GPIO.BOTH, callback = start_stop_avail, bouncetime = cf.wait_time*1000)
-	GPIO.add_event_detect( GPI, GPIO.BOTH, callback = start_stop_avail, bouncetime = 200)
+	GPIO.add_event_detect( GPI, GPIO.BOTH, callback = start_stop_avail)
 
 @app.route('/')
 def index():
